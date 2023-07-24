@@ -337,7 +337,7 @@ RUN export SWIG_ROOT=swig-4.0.2 && \
     export SWIG_DOWNLOAD_URL=https://sourceforge.net/projects/swig/files/swig/${SWIG_ROOT} && \
     export PCRE_ROOT=pcre-8.44 && \
     export PCRE_HASH=aecafd4af3bd0f3935721af77b889d9024b2e01d96b58471bd91a3063fb47728 && \
-    export PCRE_DOWNLOAD_URL=https://ftp.pcre.org/pub/pcre && \
+    export PCRE_DOWNLOAD_URL=https://ftp.exim.org/pub/pcre && \
     manylinux-entrypoint /build_scripts/build-swig.sh
 
 
