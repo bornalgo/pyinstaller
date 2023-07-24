@@ -17,6 +17,51 @@ PLATFORMS=${PLATFORMS:-win,linux,alpine}
 WORKDIR=${SRCDIR:-/src}
 pushd "$WORKDIR"
 
+
+check_option() {
+    local option_name=$1
+    local option_name_no_dash=${option_name#-}  # Remove any leading dashes
+    local default_value=$2
+    local combine_with_default=${3:-true}
+
+    # Skip environment variable check for short options (e.g., -p)
+    if [[ ${#option_name_no_dash} -gt 2 ]]; then
+        local env_var=${option_name_no_dash^^} # Convert option_name to uppercase for env variable name
+        env_var=${env_var//-/_}  # Replace dashes with underscores
+
+        # Check if the environment variable is set
+        if [[ -n "${!env_var}" ]]; then
+            echo "$option_name ${!env_var}"
+            return
+        fi
+    fi
+
+    local output=""
+
+    # Check if the option exists in the argument list and has a value
+    for (( i = 0; i < $#; i++ )); do
+        if [[ "${args[i]}" == "$option_name" ]]; then
+            if [[ "$combine_with_default" == "false" ]]; then
+                return
+            fi
+            
+        fi
+    done
+
+    # Split the default value using whitespace as the delimiter
+    local IFS=' '
+    local default_values=($default_value)
+
+    # Build the output with multiple default values
+    local output=""
+    for val in "${default_values[@]}"; do
+        output+="$option_name $val "
+    done
+    echo "$output"
+}
+
+
+
 # taken from https://github.com/cdrx/docker-pyinstaller/blob/master/linux/py3/entrypoint.sh
 PYPI_URL=${PYPI_URL:-"https://pypi.python.org/"}
 PYPI_INDEX_URL=${PYPI_INDEX_URL:-"https://pypi.python.org/simple"}
@@ -45,32 +90,46 @@ fi
 
 echo "$@"
 
+# Check if ENABLE_DEFAULT_OPTIONS is set
+if [[ -n "${ENABLE_DEFAULT_OPTIONS}" ]]; then
+    DEFAULT_OPTIONS="--log-level=DEBUG --clean --noupx --noconfirm"
+else
+    DEFAULT_OPTIONS=""
+fi
+# Use the check_option function to get values for options
+WORKPATH_OPTION=$(check_option "--workpath" "/tmp" "false")
+ADD_BINARY_OPTION=$(check_option "add-binary" "'/usr/local/lib/libcrypt.so.2:.'")
+ADDITIONAL_HOOKS_OPTION=$(check_option "--additional-hooks-dir" "/hooks")
+HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "pkg_resources.py2_warn")
+P_OPTION=$(check_option "-p" "." "false")
+
 ret=0
 if [[ $PLATFORMS == *"linux"* ]]; then
-    pyinstaller --log-level=DEBUG \
-        --clean --noupx \
-        --noconfirm \
-        --onefile \
-        --distpath dist/linux \
-        --workpath /tmp \
-        -p . \
-        --add-binary '/usr/local/lib/libcrypt.so.2:.' \
-        --additional-hooks-dir '/hooks' \
-        --hidden-import pkg_resources.py2_warn \
+    DIST_PATH_OPTION=$(check_option "--distpath" "dist/linux")
+    HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "pkg_resources.py2_warn")
+
+    pyinstaller \ 
+        $DEFAULT_OPTIONS \ 
+        $DIST_PATH_OPTION \
+        $WORKPATH_OPTION \
+        $P_OPTION \
+        $ADD_BINARY_OPTION \
+        $ADDITIONAL_HOOKS_OPTION \
+        $HIDDEN_IMPORT_OPTION \
         $@
     ret=$?
 fi
 
 if [[ $PLATFORMS == *"win"* && $ret == 0 ]]; then
-    /usr/win64/bin/pyinstaller --log-level=DEBUG \
-        --clean --noupx \
-        --noconfirm \
-        --onefile \
-        --distpath dist/windows \
-        --workpath /tmp \
-        -p . \
-        --hidden-import win32timezone \
-        --hidden-import pkg_resources.py2_warn \
+    DIST_PATH_OPTION=$(check_option "--distpath" "dist/windows")
+    HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "win32timezone pkg_resources.py2_warn")
+
+    /usr/win64/bin/pyinstaller \ 
+        $DEFAULT_OPTIONS \ 
+        $DIST_PATH_OPTION \
+        $WORKPATH_OPTION \
+        $P_OPTION \
+        $HIDDEN_IMPORT_OPTION \
         $@
     ret=$?
 
