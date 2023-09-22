@@ -13,4 +13,4 @@ cp -af --remove-destination -t / /alpine/*
 
 export SSL_CERT_FILE="$(python -c "import site; print(site.getsitepackages()[0])")/certifi/cacert.pem"
 
-/usr/local/bin/entrypoint-alpine.sh "$@"
+source /usr/local/bin/entrypoint-alpine.sh "$@"

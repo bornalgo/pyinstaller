@@ -134,7 +134,7 @@ RUN set -ex \
 # set thread stack size to 1MB so we don't segfault before we hit sys.getrecursionlimit()
 # https://github.com/alpinelinux/aports/commit/2026e1259422d4e0cf92391ca2d3844356c649d0
 		EXTRA_CFLAGS="-DTHREAD_STACK_SIZE=0x100000" \
-		LDFLAGS="-Wl,--strip-all" \
+		LDFLAGS="-Wl,--strip-all,--as-needed" \
 	&& make install \
 	&& rm -rf /usr/src/python
 
@@ -436,9 +436,10 @@ RUN pip --no-cache-dir install -U pip certifi || true
 RUN pip --no-cache-dir install pyinstaller==$PYINSTALLER_VERSION
 
 WORKDIR /src
+COPY commons.sh /commons.sh
 COPY entrypoint.sh /entrypoint.sh
 COPY switch_to_alpine.sh /switch_to_alpine.sh
-RUN chmod +x /entrypoint.sh /switch_to_alpine.sh
+RUN chmod +x /commons.sh /entrypoint.sh /switch_to_alpine.sh
 
 RUN curl -L -o /usr/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v${DUMBINIT_VERSION}/dumb-init_${DUMBINIT_VERSION}_x86_64 && \
     chmod +x /usr/bin/dumb-init

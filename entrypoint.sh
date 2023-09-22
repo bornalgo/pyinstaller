@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 # Stop at any error, show all commands
 set -ex
 
@@ -17,50 +18,9 @@ PLATFORMS=${PLATFORMS:-win,linux,alpine}
 WORKDIR=${SRCDIR:-/src}
 pushd "$WORKDIR"
 
+source /commons.sh
 
-check_option() {
-    local option_name=$1
-    local option_name_no_dash=${option_name#-}  # Remove any leading dashes
-    local default_value=$2
-    local combine_with_default=${3:-true}
-
-    # Skip environment variable check for short options (e.g., -p)
-    if [[ ${#option_name_no_dash} -gt 2 ]]; then
-        local env_var=${option_name_no_dash^^} # Convert option_name to uppercase for env variable name
-        env_var=${env_var//-/_}  # Replace dashes with underscores
-
-        # Check if the environment variable is set
-        if [[ -n "${!env_var}" ]]; then
-            echo "$option_name ${!env_var}"
-            return
-        fi
-    fi
-
-    local output=""
-
-    # Check if the option exists in the argument list and has a value
-    for (( i = 0; i < $#; i++ )); do
-        if [[ "${args[i]}" == "$option_name" ]]; then
-            if [[ "$combine_with_default" == "false" ]]; then
-                return
-            fi
-            
-        fi
-    done
-
-    # Split the default value using whitespace as the delimiter
-    local IFS=' '
-    local default_values=($default_value)
-
-    # Build the output with multiple default values
-    local output=""
-    for val in "${default_values[@]}"; do
-        output+="$option_name $val "
-    done
-    echo "$output"
-}
-
-
+ORIGINAL_DISTPATH=$DISTPATH
 
 # taken from https://github.com/cdrx/docker-pyinstaller/blob/master/linux/py3/entrypoint.sh
 PYPI_URL=${PYPI_URL:-"https://pypi.python.org/"}
@@ -73,12 +33,15 @@ echo "index-url = $PYPI_INDEX_URL" >> /root/pip/pip.conf
 echo "trusted-host = $(echo $PYPI_URL | perl -pe 's|^.*?://(.*?)(:.*?)?/.*$|$1|')" >> /root/pip/pip.conf
 ln /root/pip/pip.conf /wine/drive_c/users/root/pip/pip.ini
 
-# Handy if you need to install libraries before running pyinstaller
-SHELL_CMDS=${SHELL_CMDS:-}
-if [[ "$SHELL_CMDS" != "" ]]; then
-    /bin/bash -c "$SHELL_CMDS"
+# Run shell commands before installing requirements
+PRE_SHELL_CMDS=${PRE_SHELL_CMDS:-}
+if [[ $PLATFORMS == *"linux"* || $PLATFORMS == *"win"* ]]; then
+    if [[ "$PRE_SHELL_CMDS" != "" ]]; then
+        /bin/bash -c "$PRE_SHELL_CMDS"
+    fi
 fi
 
+# Install requirements
 if [ -f requirements.txt ]; then
     if [[ $PLATFORMS == *"linux"* ]]; then
         pip install -r requirements.txt
@@ -88,28 +51,55 @@ if [ -f requirements.txt ]; then
     fi
 fi
 
+# Run shell commands after installing the requirements
+SHELL_CMDS=${SHELL_CMDS:-}
+if [[ $PLATFORMS == *"linux"* || $PLATFORMS == *"win"* ]]; then
+    if [[ "$SHELL_CMDS" != "" ]]; then
+        /bin/bash -c "$SHELL_CMDS"
+    fi
+fi
+
+# Run python commands after installing the requirements
+PYTHON_CMDS=${PYTHON_CMDS:-}
+if [[ $PLATFORMS == *"linux"* || $PLATFORMS == *"win"* ]]; then				  
+    if [[ "$PYTHON_CMDS" != "" ]]; then
+        if [[ $PLATFORMS == *"linux"* ]]; then
+            python3 "$PYTHON_CMDS"
+        elif [[ $PLATFORMS == *"win"* ]]; then
+            /usr/win64/bin/python "$PYTHON_CMDS"
+        fi
+    fi
+fi
+
 echo "$@"
 
-# Check if ENABLE_DEFAULT_OPTIONS is set
-if [[ -n "${ENABLE_DEFAULT_OPTIONS}" ]]; then
+if check_for_spec_file "$@"; then
+    HAS_SPEC_FILE=yes
+else
+    HAS_SPEC_FILE=no
+fi
+
+# Check DISABLE_DEFAULT_OPTIONS
+DISABLE_DEFAULT_OPTIONS=${DISABLE_DEFAULT_OPTIONS:-no}
+if [ "$DISABLE_DEFAULT_OPTIONS" == "no" ] && [ "$HAS_SPEC_FILE" == "no" ]; then
     DEFAULT_OPTIONS="--log-level=DEBUG --clean --noupx --noconfirm"
 else
     DEFAULT_OPTIONS=""
 fi
+
 # Use the check_option function to get values for options
-WORKPATH_OPTION=$(check_option "--workpath" "/tmp" "false")
-ADD_BINARY_OPTION=$(check_option "add-binary" "'/usr/local/lib/libcrypt.so.2:.'")
-ADDITIONAL_HOOKS_OPTION=$(check_option "--additional-hooks-dir" "/hooks")
-HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "pkg_resources.py2_warn")
-P_OPTION=$(check_option "-p" "." "false")
+check_option WORKPATH_OPTION "--workpath" "/tmp" "no" "no" "$@"
+check_option ADD_BINARY_OPTION "--add-binary" "/usr/local/lib/libcrypt.so.2:." "yes" "yes" "$@"
+check_option ADDITIONAL_HOOKS_OPTION "--additional-hooks-dir" "/hooks" "yes" "yes" "$@"
+check_option P_OPTION "-p" "." "no" "yes" "$@"
 
 ret=0
 if [[ $PLATFORMS == *"linux"* ]]; then
-    DIST_PATH_OPTION=$(check_option "--distpath" "dist/linux")
-    HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "pkg_resources.py2_warn")
-
-    pyinstaller \ 
-        $DEFAULT_OPTIONS \ 
+    check_option DIST_PATH_OPTION "--distpath" "dist/linux" "no" "no" "$@"
+    check_option HIDDEN_IMPORT_OPTION "--hidden-import" "pkg_resources.py2_warn" "yes" "yes" "$@"
+    # pip install --upgrade pyinstaller
+    pyinstaller \
+        $DEFAULT_OPTIONS \
         $DIST_PATH_OPTION \
         $WORKPATH_OPTION \
         $P_OPTION \
@@ -118,14 +108,19 @@ if [[ $PLATFORMS == *"linux"* ]]; then
         $HIDDEN_IMPORT_OPTION \
         $@
     ret=$?
+    if [[ -n "$DISTPATH" && -d "$DISTPATH" ]]; then
+        chown -R --reference=. $DISTPATH
+    fi
+    DISTPATH=$ORIGINAL_DISTPATH
 fi
 
 if [[ $PLATFORMS == *"win"* && $ret == 0 ]]; then
-    DIST_PATH_OPTION=$(check_option "--distpath" "dist/windows")
-    HIDDEN_IMPORT_OPTION=$(check_option "--hidden-import" "win32timezone pkg_resources.py2_warn")
 
-    /usr/win64/bin/pyinstaller \ 
-        $DEFAULT_OPTIONS \ 
+    check_option DIST_PATH_OPTION "--distpath" "dist/windows" "no" "no" "$@"
+    check_option HIDDEN_IMPORT_OPTION "--hidden-import" "win32timezone pkg_resources.py2_warn" "yes" "yes" "$@"
+    # /usr/win64/bin/pip install --upgrade pyinstaller
+    /usr/win64/bin/pyinstaller \
+        $DEFAULT_OPTIONS \
         $DIST_PATH_OPTION \
         $WORKPATH_OPTION \
         $P_OPTION \
@@ -145,7 +140,7 @@ if [[ $PLATFORMS == *"win"* && $ret == 0 ]]; then
 
         openssl crl2pkcs7 -nocrl -certfile /dev/shm/cert.pem -outform DER -out /dev/shm/authenticode.spc
 
-        for exefile in dist/windows/*.exe; do
+        for exefile in "$DISTPATH/*.exe"; do
             echo "Signing Windows binary $exefile"
             signcode \
                 -spc /dev/shm/authenticode.spc \
@@ -157,12 +152,22 @@ if [[ $PLATFORMS == *"win"* && $ret == 0 ]]; then
             mv "$exefile.bak" "$(dirname $exefile)/unsigned_$(basename $exefile)"
         done
     fi
+    if [[ -n "$DISTPATH" && -d "$DISTPATH" ]]; then
+        chown -R --reference=. $DISTPATH
+    fi
+    DISTPATH=$ORIGINAL_DISTPATH
 fi
 
-chown -R --reference=. dist
-chown -R --reference=. *.spec
+# Run shell commands after building binaries
+POST_SHELL_CMDS=${POST_SHELL_CMDS:-}
+if [[ $PLATFORMS == *"linux"* || $PLATFORMS == *"win"* ]]; then	
+    if [[ "$POST_SHELL_CMDS" != "" ]]; then
+        /bin/bash -c "$POST_SHELL_CMDS"
+    fi
+fi
+
 popd
 
 if [[ $ret == 0 && $PLATFORMS == *"alpine"* ]]; then
-    /switch_to_alpine.sh $@
+    source /switch_to_alpine.sh $@
 fi
