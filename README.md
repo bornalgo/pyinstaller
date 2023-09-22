@@ -62,7 +62,7 @@ Some behavior can be changed by changing the environment of the container.
 |SHELL_CMDS <br> ALPINE_SHELL_CMDS||Runs the given shell commands before calling pyinstaller. Useful if you need to execute shell or change the build environment in some way before building the binaries. You can also use a `.spec` file for that, since it is a Python script afterall.|
 |POST_SHELL_CMDS <br> ALPINE_POST_SHELL_CMDS||Runs the given shell commands after calling pyinstaller. Useful if you need to execute shell or change the build environment in some way after building the binaries.|
 |PYTHON_CMDS <br> ALPINE_PYTHON_CMDS||Runs the given python commands before calling pyinstaller.|
-|DISABLE_DEFAULT_OPTIONS|no|Controls whether the pyinstaller default options (`--log-level=DEBUG --clean --noupx --noconfirm`) get included in pyinstaller execution or not|
+|DISABLE_DEFAULT_OPTIONS|no|Controls whether the pyinstaller default options (`--log-level=DEBUG --clean --noupx --noconfirm`) get included in pyinstaller execution or not.|
 |CODESIGN_KEYFILE||If present, it must be a password-protected PFX keyfile with te Authenticode code signing certificate to use to sign the generated Windows executables. Reminder: It must be reachable from the container.|
 |CODESIGN_PASS||Password for the CODESIGN_KEYFILE.|
 |CODESIGN_EXTRACERT||Optional extra file in PEM format with the certificate chain to append to the signature. Useful to make certain tools (like signtool.exe) verify OK.|
